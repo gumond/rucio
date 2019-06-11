@@ -137,3 +137,14 @@ def validate_auth_token(token):
     """
 
     return authentication.validate_auth_token(token)
+
+
+def validate_jwt(token):
+    """
+    Validate an JSON Web token (JWT).
+
+    :param token: JWT as a variable-length string.
+    :returns: TO-BE-CHECKED once function implemented !!! Tuple(account identifier, token lifetime) if successful, None otherwise.
+    """
+
+    return authentication.validate_jwt(token)
