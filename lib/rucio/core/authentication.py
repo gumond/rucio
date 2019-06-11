@@ -29,8 +29,12 @@ import datetime
 import hashlib
 import random
 import sys
+import requests
+import traceback
 
 import paramiko
+
+from jose import jwt
 
 from dogpile.cache import make_region
 from dogpile.cache.api import NO_VALUE
@@ -350,3 +354,128 @@ def query_token(token, session=None):
                 'identity': ret[0][1],
                 'lifetime': ret[0][2]}
     return None
+
+
+def get_jwt_issuer_public_keys(issuer, request_config=False):
+    """
+    Extracts the dictionary of public keys from the issuer URL unless known already.
+
+    :param issuer: url string of the issuer
+    :param request_config: If True, triggers a lookup of public_keys via a universal URL path same for all Identity Providers.
+
+    :returns: dictionary of issuers public keys. Raises an exception otherwise.
+
+    """
+    # TO-BE-DONE: check for known public_keys and issuers should be made against a DB
+    # TO-BE-DONE: in case public keys stop being valid (to-be-done) daemon updating this information (every few hours ?) needs to be implemented
+    known_public_keys = {'https://iam.extreme-datacloud.eu/': {"keys": [{"kty": "RSA", "e": "AQAB", "kid": "rsa1", "n": "\
+                         xWV7EnSAhAxR7Pq8SkWRzzNqdJCiV8CczLle93subSzpTtT_i_s7lXNha2Jee78Yp2aF6yYJ8gUTAlAr2y6FmHG6qElo__mj\
+                         6beLFq4Q1qPllzuCDRA7b3Gc8Y1mv96Y4jCQ8XEuDLnvs-EyKF9d05Kl0tXnN5h8nv0OrDnjItE"}]}}
+
+    if not request_config:
+        if issuer in known_public_keys:
+            if known_public_keys[issuer]:
+                return known_public_keys[issuer]
+            else:
+                return get_jwt_issuer_public_keys(issuer, True)
+        else:
+            return get_jwt_issuer_public_keys(issuer, True)
+    else:
+        config_res = requests.get(issuer + ".well-known/openid-configuration")
+        if config_res:
+            jwks_uri = config_res.json()['jwks_uri']
+            resks = requests.get(jwks_uri)
+            if resks:
+                return resks.json()
+            else:
+                raise Exception("Unable to extract public keys from issuer's endpoint '%s'" % jwks_uri)
+        else:
+            raise Exception("Unable to extract OpenID Configuration from issuer's endpoint '%s'" % (issuer + ".well-known/openid-configuration"))
+
+
+def get_jwt_issuer(json_web_token):
+    """
+    Decodes the unverified claims of the JWT to extract and return the issuers domain url string.
+
+    :param json_web_token: JSON Web Token string
+
+    :returns: url string of the issuer. Raises an exception otherwise.
+
+    """
+    headers = jwt.get_unverified_claims(json_web_token)
+    if not headers:
+        raise Exception('Invalid JSON Web Token: missing unverified claims.')
+    try:
+        return headers['iss']
+    except KeyError:
+        raise Exception('Invalid JSON Web Token: missing \'iss\' claim in the unverified claims.')
+
+
+def get_jwt_kid(json_web_token):
+    """
+    Decodes the unverified headers of the JWT to extract and return the key ID (kid).
+
+    :param json_web_token: JSON Web Token string
+
+    :returns: kid string. Raises an exception otherwise.
+
+    """
+    headers = jwt.get_unverified_header(json_web_token)
+    if not headers:
+        raise Exception('Invalid JSON Web Token: missing headers.')
+    try:
+        return headers['kid']
+    except KeyError:
+        raise Exception('Invalid JSON Web Token: missing kid.')
+
+
+def get_jwk_matching_jwt_kid(jwt_kid, issuer_public_keys):
+    """
+    Loops through the public key set from the issuer and looks for the key ID (kid)
+    which corresponds to the kid in the headers of the JWT which we intend to verify.
+
+    :param jwt_kid: key ID of the JSON Web Token which we attempt to verify
+    :param issuer_public_keys: dict of public keys provided by the issuer
+
+    :returns: dictionary containing issuers public_key which corresponds to the JWT.
+              Raises an exception otherwise.
+
+    """
+    for jwk in issuer_public_keys.get('keys'):
+        if jwk.get('kid') == jwt_kid:
+            return jwk
+    raise Exception('Invalid JSON Web Token: JSON web token kid not found among issuer kid(s).')
+
+
+def validate_jwt(json_web_token):
+    """
+    Verifies signature and validity of a JSON Web Token. First extracts the issuer,
+    signing algorithm and key ID from the unverified token headers. Later, verifies the validity
+    and attempts to decode the token information providing the public_key is available from the issuer
+    (will try to request public_keys from the issuer if the issuer, unless the issuer is not known already).
+
+    :param json_web_token: the JWT string to verify
+
+    :returns: The dict representation of the claims set,
+              assuming the signature is valid and all
+              requested data validation passes. Exception otherwise
+
+    """
+    try:
+        issuer_public_keys = get_jwt_issuer_public_keys(get_jwt_issuer(json_web_token))
+        jwt_kid = get_jwt_kid(json_web_token)
+        jwt_key = get_jwk_matching_jwt_kid(jwt_kid, issuer_public_keys)
+
+        # verify signature & validity
+        decoded_jwt_dict = jwt.decode(json_web_token, jwt_key)
+        # {'iss': u'https://iam.extreme-datacloud.eu/',
+        #  'iat': 1560258669,
+        #  'jti': u'09b7a8c1-0b0e-4c90-8866-e9e4350bdcc0',
+        #  'sub': u'b3127dc7-2be3-417b-9647-6bf61238ad01',
+        #  'exp': 1560262269}
+
+        return jwt.decode(json_web_token, jwt_key)
+    except:
+        raise Exception(traceback.format_exc())
+
+

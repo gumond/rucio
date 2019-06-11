@@ -11,11 +11,12 @@
 '''
 
 import base64
+import traceback
 
 from nose.tools import assert_equal, assert_is_none, assert_is_not_none, assert_greater, assert_in
 from paste.fixture import TestApp
 
-from rucio.api.authentication import get_auth_token_user_pass, get_auth_token_ssh, get_ssh_challenge_token
+from rucio.api.authentication import get_auth_token_user_pass, get_auth_token_ssh, get_ssh_challenge_token, validate_jwt
 from rucio.common.exception import Duplicate
 from rucio.common.utils import ssh_sign
 from rucio.core.identity import add_account_identity, del_account_identity
@@ -108,6 +109,62 @@ class TestAuthCoreApi(object):
         assert_is_none(result)
 
         del_account_identity(PUBLIC_KEY, IdentityType.SSH, 'root')
+
+    def test_validate_jwt_invalide_signature(self):
+        """AUTHENTICATION (CORE): JWT validation (wrong signature)"""
+        try:
+            print("\nTest: catching invalid signature:")
+            print("---------------------------------")
+            validate_jwt("eyJraWQiOiJyc2ExIiwiYWxnIjoiUlMyNTYifQ.eyJzdWIiOiJiMzEyN2RjNy0yYmUzLTQx"\
+                         "N2ItOTY0Ny02YmY2MTIzOGFkMDEiLCJpc3MiOiJodHRwczpcL1wvaWFtLmV4dHJlbWUtZGF"\
+                         "0YWNsb3VkLmV1XC8iLCJleHAiOjE1NTkxMzg0MzEsImlhdCI6MTU1OTEzNDgzMSwianRpIj"\
+                         "oiYjE1MDExYWItZGFiYy00ODg2LTgxM2ItNjMxOTU0ZDdmMzIxIn0.kx8rGARIL-mVD0MDJ"\
+                         "otVUuhNisUe3il_pGMoVYTtmuFRwbdgJ6hyG7hqUVobwEdjEEi4kwKfVDr_VYafZBt-XmLM"\
+                         "dFTq71FQIbrfpvbRAk349vScZLWTq5DviEnxRI2wqbT3xl_ZoXrgTIwckciS9bBzqf77H57vQK6iGU5mSzq")
+
+        except:
+            traceprint = traceback.format_exc()
+            assert_in('JWTError: Signature verification failed.', traceprint)
+
+    def test_validate_jwt_expired(self):
+        """AUTHENTICATION (CORE): JWT validation (expired token)"""
+        try:
+            print("\nTest: catching expired token:")
+            print("-----------------------------")
+            validate_jwt("eyJraWQiOiJyc2ExIiwiYWxnIjoiUlMyNTYifQ.eyJzdWIiOiJiMzEyN2RjNy0yYmUzLTQx"\
+                         "N2ItOTY0Ny02YmY2MTIzOGFkMDEiLCJpc3MiOiJodHRwczpcL1wvaWFtLmV4dHJlbWUtZGF"\
+                         "0YWNsb3VkLmV1XC8iLCJleHAiOjE1NTkxMzg0MzEsImlhdCI6MTU1OTEzNDgzMSwianRpIj"\
+                         "oiYjE1MDExYWItZGFiYy00ODg2LTgxM2ItNjMxOTU0ZDdmMzIxIn0.kx8rGARIL-mVD0MDJ"\
+                         "otVUuhNisUe3il_pGMoVYTtmuFRwbdgJ6hyG7hqUVobwEdjEEi4kwKfVDr_VYafZBt-XmLM"\
+                         "dFTq71FQIbrfpvbRAk349vScZLWTq5DviEnxRI2wqBT3xl_ZoXrgTIwckciS9bBzqf77H57vQK6iGU5mSzQ")
+        except:
+            traceprint = traceback.format_exc()
+            assert_in('ExpiredSignatureError: Signature has expired.', traceprint)
+
+    def test_validate_jwt_invalid_claims(self):
+        """AUTHENTICATION (CORE): JWT validation (wrong token claims)"""
+        try:
+            print("\nTest: catching decoding token claims:")
+            print("-----------------------------")
+            validate_jwt("eyJrawQiOiJyc2ExIiwiYWxnIjoiUlMyNTYifQ.eyJzdWIiOiJiMzEyN2RjNy0yYmUzLTQx"\
+                         "N2ItOTY0Ny02YmY2MTIzOGFkMDEiLCJpc3MiOiJodHRwczpcL1wvaWFtLmV4dHJlbWUtZGF"\
+                         "0YWNsb3VkLmV1XC8iLCJleHAiOjE1NTkxMzg0MzEsImlhdCI6MTU1OTEzNDgzMSwianRpIj"\
+                         "oiYjE1MDExYWItZGFiYy00ODg2LTgxM2ItNjMxOTU0ZDdmMzIxIn0.kx8rGARIL-mVD0MDJ"\
+                         "otVUuhNisUe3il_pGMoVYTtmuFRwbdgJ6hyG7hqUVobwEdjEEi4kwKfVDr_VYafZBt-XmLM"\
+                         "dFTq71FQIbrfpvbRAk349vScZLWTq5DviEnxRI2wqBT3xl_ZoXrgTIwckciS9bBzqf77H57vQK6iGU5mSzQ")
+        except:
+            traceprint = traceback.format_exc()
+            assert_in('JWTError: Error decoding token claims.', traceprint)
+
+    def test_validate_jwt_success(self):
+        """AUTHENTICATION (CORE): JWT validation (successful validation)"""
+        try:
+            print("\nTest: valid token:")
+            print("-----------------------------")
+            validate_jwt("eyJraWQiOiJyc2ExIiwiYWxnIjoiUlMyNTYifQ.eyJzdWIiOiJiMzEyN2RjNy0yYmUzLTQxN2ItOTY0Ny02YmY2MTIzOGFkMDEiLCJpc3MiOiJodHRwczpcL1wvaWFtLmV4dHJlbWUtZGF0YWNsb3VkLmV1XC8iLCJleHAiOjE1NjAyNjIyNjksImlhdCI6MTU2MDI1ODY2OSwianRpIjoiMDliN2E4YzEtMGIwZS00YzkwLTg4NjYtZTllNDM1MGJkY2MwIn0.k-wAf4WAOPuXmJEKP2nH5p0-p11hG_na1sJWZnidNaoh7QM8D_R85wT_-nL-10CHCMmJ2vvM0ed4GhQW94Su45B9ZyjZLHgd9eOLIECK5YaCYiCw2WfFEq2LgvGXQ_3q1AMAW1RHMx_0zQl7rdb8ROYePi5Tnt_HmjprPdX5Sxw")
+        except:
+            traceprint = traceback.format_exc()
+            assert_in('JWTError: Error decoding token claims.', traceprint)
 
 
 class TestAuthRestApi(object):
