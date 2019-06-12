@@ -38,7 +38,8 @@ from rucio.api.authentication import (get_auth_token_user_pass,
                                       get_auth_token_x509,
                                       get_auth_token_ssh,
                                       get_ssh_challenge_token,
-                                      validate_auth_token)
+                                      validate_auth_token,
+                                      validate_jwt)
 from rucio.common.exception import AccessDenied, IdentityError, RucioException
 from rucio.common.utils import generate_http_error, date_to_str
 from rucio.web.rest.common import RucioController, check_accept_header_wrapper
@@ -52,6 +53,7 @@ URLS = (
     '/ssh', 'SSH',
     '/ssh_challenge_token', 'SSHChallengeToken',
     '/validate', 'Validate',
+    '/validate_jwt', 'Validate_JWT',
 )
 
 
@@ -489,6 +491,60 @@ class Validate(RucioController):
         token = ctx.env.get('HTTP_X_RUCIO_AUTH_TOKEN')
 
         result = validate_auth_token(token)
+        if not result:
+            raise generate_http_error(401, 'CannotAuthenticate', 'Cannot authenticate to account %(account)s with given credentials' % locals())
+
+        return result
+
+
+class Validate_JWT(RucioController):
+    """
+    Validate a JSON Web Token (JWT).
+    """
+
+    def OPTIONS(self):
+        """
+        HTTP Success:
+            200 OK
+
+        Allow cross-site scripting. Explicit for Authentication.
+        """
+
+        header('Access-Control-Allow-Origin', ctx.env.get('HTTP_ORIGIN'))
+        header('Access-Control-Allow-Headers', ctx.env.get('HTTP_ACCESS_CONTROL_REQUEST_HEADERS'))
+        header('Access-Control-Allow-Methods', '*')
+        header('Access-Control-Allow-Credentials', 'true')
+        header('Access-Control-Expose-Headers', 'X-Rucio-Auth-Token')
+        raise OK
+
+    @check_accept_header_wrapper(['application/octet-stream'])
+    def GET(self):
+        """
+        HTTP Success:
+            200 OK
+
+        HTTP Error:
+            401 Unauthorized
+            406 Not Acceptable
+
+        :param JWT: JSON Web Token as a variable-length string.
+        :returns: TO-BE-CHECKED once function implemented !!! Tuple(account name, token lifetime).
+        """
+
+        header('Access-Control-Allow-Origin', ctx.env.get('HTTP_ORIGIN'))
+        header('Access-Control-Allow-Headers', ctx.env.get('HTTP_ACCESS_CONTROL_REQUEST_HEADERS'))
+        header('Access-Control-Allow-Methods', '*')
+        header('Access-Control-Allow-Credentials', 'true')
+        header('Access-Control-Expose-Headers', 'X-Rucio-Auth-Token')
+
+        header('Content-Type', 'application/octet-stream')
+        header('Cache-Control', 'no-cache, no-store, max-age=0, must-revalidate')
+        header('Cache-Control', 'post-check=0, pre-check=0', False)
+        header('Pragma', 'no-cache')
+
+        token = ctx.env.get('HTTP_X_RUCIO_AUTH_TOKEN')
+
+        result = validate_jwt(token)
         if not result:
             raise generate_http_error(401, 'CannotAuthenticate', 'Cannot authenticate to account %(account)s with given credentials' % locals())
 
