@@ -514,7 +514,7 @@ class Validate_JWT(RucioController):
         header('Access-Control-Allow-Headers', ctx.env.get('HTTP_ACCESS_CONTROL_REQUEST_HEADERS'))
         header('Access-Control-Allow-Methods', '*')
         header('Access-Control-Allow-Credentials', 'true')
-        header('Access-Control-Expose-Headers', 'X-Rucio-Auth-JWT')
+        header('Access-Control-Expose-Headers', 'X-Rucio-Auth-Token')
         raise OK
 
     @check_accept_header_wrapper(['application/octet-stream'])
@@ -535,7 +535,7 @@ class Validate_JWT(RucioController):
         header('Access-Control-Allow-Headers', ctx.env.get('HTTP_ACCESS_CONTROL_REQUEST_HEADERS'))
         header('Access-Control-Allow-Methods', '*')
         header('Access-Control-Allow-Credentials', 'true')
-        header('Access-Control-Expose-Headers', 'X-Rucio-Auth-JWT')
+        header('Access-Control-Expose-Headers', 'X-Rucio-Auth-Token')
 
         header('Content-Type', 'application/octet-stream')
         header('Cache-Control', 'no-cache, no-store, max-age=0, must-revalidate')
