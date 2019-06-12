@@ -5,3 +5,6 @@ curl -v -i --cacert /opt/rucio/etc/web/CERN-bundle.pem -H "X-Rucio-Account: root
 curl -v -i --cacert /opt/rucio/etc/web/CERN-bundle.pem -H "X-Rucio-Account: root" -E $X509_USER_PROXY -X GET https://mlassnig-dev.cern.ch/auth/x509_proxy
 
 curl -v -i --cacert /opt/rucio/etc/web/CERN-bundle.pem -H "X-Rucio-Account: root" --negotiate -u: -X GET https://mlassnig-dev.cern.ch/auth/gss
+
+curl  -v -i --cacert /opt/rucio/etc/web/CERN-bundle.pem -H "X-Rucio-Account: root" -H 'Accept: application/octet-stream' -H "X-Rucio-Auth-JWT: ${JWT}" https://rucio-auth-int-01.cern.ch/auth/validate_jwt
+
