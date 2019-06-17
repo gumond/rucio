@@ -16,6 +16,7 @@
 # - Mario Lassnig <mario@lassnig.net>, 2012-2018
 # - Vincent Garonne <vgaronne@gmail.com>, 2012-2015
 # - Martin Barisits <martin.barisits@cern.ch>, 2017
+# - Jaroslav Guenther <jaroslav.guenther@cern.ch>, 2019
 #
 # PY3K COMPATIBLE
 

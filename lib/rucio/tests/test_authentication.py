@@ -8,6 +8,7 @@
  Authors:
  - Mario Lassnig, <mario.lassnig@cern.ch>, 2012, 2017
  - Vincent Garonne,  <vincent.garonne@cern.ch> , 2011-2017
+ - Jaroslav Guenther <jaroslav.guenther@cern.ch>, 2019
 '''
 
 import base64
@@ -15,9 +16,10 @@ import traceback
 
 from nose.tools import assert_equal, assert_is_none, assert_is_not_none, assert_greater, assert_in
 from paste.fixture import TestApp
+from jose import jwt
 
 from rucio.api.authentication import get_auth_token_user_pass, get_auth_token_ssh, get_ssh_challenge_token, validate_jwt
-from rucio.common.exception import Duplicate
+from rucio.common.exception import Duplicate, CannotAuthenticate
 from rucio.common.utils import ssh_sign
 from rucio.core.identity import add_account_identity, del_account_identity
 from rucio.db.sqla.constants import IdentityType
@@ -153,17 +155,12 @@ class TestAuthCoreApi(object):
     def test_validate_jwt_success(self):
         """AUTHENTICATION (CORE): JWT validation (successful validation)"""
         try:
-            claims = validate_jwt("eyJraWQiOiJyc2ExIiwiYWxnIjoiUlMyNTYifQ.eyJzdWIiOiJiMzEyN2RjNy0yYmUzL"
-                                  "TQxN2ItOTY0Ny02YmY2MTIzOGFkMDEiLCJpc3MiOiJodHRwczpcL1wvaWFtLmV4dHJlbW"
-                                  "UtZGF0YWNsb3VkLmV1XC8iLCJleHAiOjE1NjAyNzAzODksImlhdCI6MTU2MDI2Njc4OSw"
-                                  "ianRpIjoiMmI1NTRlMWMtMGNiNS00NzNkLThlODctZjBiYjJkMjg4NDRjIn0.vfEO3t_Q"
-                                  "OkQ7RZnE2K38I3CpQnBXJk97m4l4GTmIyET4MPwZfJkGjw9cUb6U2MKgJimEyh7xoaKNk"
-                                  "ZeUboXaKLMgmmXgIczNtmZcNTaNbnatl1hE5WdiDi3pMOG6cSPb44BwyB123e6vPogdgvLeXXn1SgcmE7VoqAkdq39E4uA")
+            token = jwt.encode({'testclaim': 'test_jwt_info', 'iss': 'testjwk'}, 'secret1,.@pwd_l2L3J43544', algorithm='HS256', headers={'kid': 'keyid', 'iss': 'testjwk'})
+            claims = validate_jwt(token)
             assert_equal(True, isinstance(claims, dict))
         except:
-            # the token above must be updated for each test
-            # automatic valid token generation is not implemented for this test
-            pass
+            traceback.print_exc()
+            raise CannotAuthenticate(traceback.format_exc())
 
 
 class TestAuthRestApi(object):

@@ -22,6 +22,7 @@
 # - Cedric Serfon <cedric.serfon@cern.ch>, 2014
 # - Martin Barisits <martin.barisits@cern.ch>, 2017
 # - Hannes Hansen <hannes.jakob.hansen@cern.ch>, 2018-2019
+# - Jaroslav Guenther <jaroslav.guenther@cern.ch>, 2019
 #
 # PY3K COMPATIBLE
 
@@ -514,7 +515,7 @@ class Validate_JWT(RucioController):
         header('Access-Control-Allow-Headers', ctx.env.get('HTTP_ACCESS_CONTROL_REQUEST_HEADERS'))
         header('Access-Control-Allow-Methods', '*')
         header('Access-Control-Allow-Credentials', 'true')
-        header('Access-Control-Expose-Headers', 'X-Rucio-Auth-Token')
+        header('Access-Control-Expose-Headers', 'X-Rucio-Auth-Token, X-Rucio-Auth-JWT')
         raise OK
 
     @check_accept_header_wrapper(['application/octet-stream'])
@@ -535,7 +536,7 @@ class Validate_JWT(RucioController):
         header('Access-Control-Allow-Headers', ctx.env.get('HTTP_ACCESS_CONTROL_REQUEST_HEADERS'))
         header('Access-Control-Allow-Methods', '*')
         header('Access-Control-Allow-Credentials', 'true')
-        header('Access-Control-Expose-Headers', 'X-Rucio-Auth-Token')
+        header('Access-Control-Expose-Headers', 'X-Rucio-Auth-Token, X-Rucio-Auth-JWT')
 
         header('Content-Type', 'application/octet-stream')
         header('Cache-Control', 'no-cache, no-store, max-age=0, must-revalidate')
@@ -543,8 +544,12 @@ class Validate_JWT(RucioController):
         header('Pragma', 'no-cache')
 
         token = ctx.env.get('HTTP_X_RUCIO_AUTH_TOKEN')
+        jwt_token = ctx.env.get('HTTP_X_RUCIO_AUTH_JWT')
 
-        result = validate_jwt(token)
+        if jwt_token:
+            result = validate_jwt(jwt_token)
+        else:
+            result = validate_auth_token(token)
         if not result:
             raise generate_http_error(401, 'CannotAuthenticate', 'Cannot authenticate to account %(account)s with given credentials' % locals())
 

@@ -21,6 +21,7 @@
 # - Cedric Serfon <cedric.serfon@cern.ch>, 2013
 # - Thomas Beermann <thomas.beermann@cern.ch>, 2017
 # - Hannes Hansen <hannes.jakob.hansen@cern.ch>, 2018
+# - Jaroslav Guenther <jaroslav.guenther@cern.ch>, 2019
 #
 # PY3K COMPATIBLE
 
@@ -40,6 +41,7 @@ from dogpile.cache import make_region
 from dogpile.cache.api import NO_VALUE
 
 from rucio.common.utils import generate_uuid
+from rucio.common.exception import CannotAuthenticate
 from rucio.core.account import account_exists
 from rucio.db.sqla import models
 from rucio.db.sqla.constants import IdentityType
@@ -61,12 +63,20 @@ TOKENREGION = make_region(
     expiration_time=3600
 )
 
+# As of June 2019, the common WLCG JWT profile has built-in mechanisms for public key rotation;
+# these do not need to live as long as CAs. This may evolve following operational experience,
+# provision should be made for flexible lifetimes. Public keys of the issuer have a minimum lifetime = 2 days,
+# maximum 12 months and recomended lifetime is ~ 6 months. WLCG also recommends the optimal revocation
+# time of the public key to 6 hours (set below)
+
 JWT_ISSUER_KEYS_REGION = make_region(
     function_key_generator=token_key_generator
 ).configure(
     'dogpile.cache.memory',
     expiration_time=3600
 )
+# for testing purposes introduing a dummy issuer entry
+JWT_ISSUER_KEYS_REGION.set('testjwk', {'keys': [{'kid': 'keyid', 'key': 'secret1,.@pwd_l2L3J43544'}]})
 
 
 @read_session
@@ -388,12 +398,12 @@ def get_jwt_issuer_public_keys(issuer):
         if resks:
             return resks.json()
         else:
-            raise Exception("Unable to extract public keys from issuer's endpoint '%s'" % jwks_uri)
+            raise CannotAuthenticate("Unable to extract public keys from issuer's endpoint '%s'" % jwks_uri)
     else:
-        raise Exception("Unable to extract OpenID Configuration from issuer's endpoint '%s'" % (issuer + ".well-known/openid-configuration"))
+        raise CannotAuthenticate("Unable to extract OpenID Configuration from issuer's endpoint '%s'" % (issuer + ".well-known/openid-configuration"))
 
 
-def validate_jwt(json_web_token):
+def validate_jwt(json_web_token, request_public_keys=False):
     """
     Verifies signature and validity of a JSON Web Token. First extracts the issuer,
     signing algorithm and key ID from the unverified token headers. Later, verifies the validity
@@ -412,20 +422,24 @@ def validate_jwt(json_web_token):
         # decode the unverified claims of the JWT to extract and return the issuer's domain url string.
         headers = jwt.get_unverified_claims(json_web_token)
         if not headers:
-            raise Exception('Invalid JSON Web Token: missing unverified claims.')
+            raise CannotAuthenticate('Invalid JSON Web Token: missing unverified claims.')
         issuer = headers['iss']
 
         # getting public keys of the issuer
         # check if the public keys of the issuer are already in cache region
-        issuer_public_keys = JWT_ISSUER_KEYS_REGION.get(issuer)
-        if issuer_public_keys is NO_VALUE:  # no cached entry found
+        if request_public_keys:
             issuer_public_keys = get_jwt_issuer_public_keys(issuer)
             JWT_ISSUER_KEYS_REGION.set(issuer, issuer_public_keys)
+        else:
+            issuer_public_keys = JWT_ISSUER_KEYS_REGION.get(issuer)
+            if issuer_public_keys is NO_VALUE:  # no cached entry found
+                issuer_public_keys = get_jwt_issuer_public_keys(issuer)
+                JWT_ISSUER_KEYS_REGION.set(issuer, issuer_public_keys)
 
         # decode the unverified headers of the JWT to extract and return the key ID (kid).
         headers = jwt.get_unverified_header(json_web_token)
         if not headers:
-            raise Exception('Invalid JSON Web Token: missing headers.')
+            raise CannotAuthenticate('Invalid JSON Web Token: missing headers.')
         jwt_kid = headers['kid']
 
         # loop through the public key set from the issuer and look for the key ID (kid)
@@ -435,17 +449,29 @@ def validate_jwt(json_web_token):
             if jwk.get('kid') == jwt_kid:
                 jwt_key = jwk
         if not jwt_key:
-            raise Exception('Invalid JSON Web Token: kid not found among issuer kid(s).')
+            raise CannotAuthenticate('Invalid JSON Web Token: kid not found among issuer kid(s).')
 
         # verify signature & validity
-        decoded_jwt_dict = jwt.decode(json_web_token, jwt_key)
+        decoded_jwt_dict={}
+        try:
+            decoded_jwt_dict = jwt.decode(json_web_token, jwt_key)
+        except:
+            traceprint = traceback.format_exc()
+            # Here we are covering the case when the cashed public_keys of the issuer are not
+            # up-to-date and the signature verification fails due to that reason.
+            # (!) Here we also (!) trust the clients that their authentication re-trials
+            # will not be hammering us with failing requests (this would trigger load not only
+            # to our servers but also on the OIDC issuer who would be asked for public_keys for each failed signature verification)
+            if (('JWTError: Signature verification failed.' in traceprint) and request_public_keys == False):
+                validate_jwt(json_web_token, request_public_keys=True)
+            else:
+                CannotAuthenticate(traceback.format_exc())
         # {'iss': u'https://iam.extreme-datacloud.eu/',
         #  'iat': 1560258669,
         #  'jti': u'09b7a8c1-0b0e-4c90-8866-e9e4350bdcc0',
         #  'sub': u'b3127dc7-2be3-417b-9647-6bf61238ad01',
         #  'exp': 1560262269}
-
         return decoded_jwt_dict
 
     except:
-        raise Exception(traceback.format_exc())
+        raise CannotAuthenticate(traceback.format_exc())
